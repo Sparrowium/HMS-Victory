@@ -1,0 +1,123 @@
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: victoriametrics
+    restart: unless-stopped
+    networks:
+      - monitoring
+    volumes:
+      - ./storage/victoriametrics:/victoria-metrics-data
+    command:
+      - '-storageDataPath=/victoria-metrics-data'
+      - '-retentionPeriod=${VM_RETENTION_PERIOD}'
+      - '-httpListenAddr=${VM_HTTP_LISTEN_ADDR}'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8428/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    container_name: victorialogs
+    restart: unless-stopped
+    networks:
+      - monitoring
+    volumes:
+      - ./storage/victorialogs:/victoria-logs-data
+    command:
+      - '-storageDataPath=/victoria-logs-data'
+      - '-httpListenAddr=${VLOG_HTTP_LISTEN_ADDR}'
+
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    container_name: vmagent
+    restart: unless-stopped
+    networks:
+      - monitoring
+    volumes:
+      - ./vmagent.yml:/etc/vmagent/vmagent.yml:ro
+    command:
+      - '-promscrape.config=/etc/vmagent/vmagent.yml'
+      - '-remoteWrite.url=http://victoriametrics:8428/api/v1/write'
+    depends_on:
+      - victoriametrics
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    networks:
+      - monitoring
+    user: root
+    privileged: true
+    volumes:
+      - /proc:/host/proc:ro 
+      - /sys:/host/sys:ro 
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'   
+      - '--collector.rapl' 
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    networks:
+      - monitoring
+    environment:
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - ./storage/grafana-data:/var/lib/grafana
+    depends_on:
+      - victoriametrics
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT}:80"
+    networks:
+      - monitoring
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - victoriametrics
+      - victorialogs
+      - grafana
+
+  snmp-exporter:
+    image: prom/snmp-exporter:latest
+    container_name: snmp-exporter
+    restart: unless-stopped
+    networks:
+      - monitoring
+    ports:
+      - "127.0.0.1:9116:9116"
+    volumes:
+      - ./snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+    command:
+      - "--config.file=/etc/snmp_exporter/snmp.yml"
+
+  coredns:
+    image: coredns/coredns:latest
+    container_name: coredns
+    command: ["-conf", "/etc/coredns/Corefile"]
+    networks:
+      - monitoring
+    volumes:
+      - ./coredns/conf:/etc/coredns
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    driver: bridge

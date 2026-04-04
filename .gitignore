@@ -1,0 +1,14 @@
+# Environment variables (secrets)
+.env
+
+# Generated configuration files (from templates)
+
+# Storage volumes
+/storage/
+
+# CoreDNS runtime
+/coredns/conf/
+
+# OS junk
+.DS_Store
+*.swp
