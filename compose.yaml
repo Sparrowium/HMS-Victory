@@ -1,10 +1,13 @@
 services:
+
+  # --- Victoria and its exporter ---
   victoriametrics:
     image: victoriametrics/victoria-metrics:latest
     container_name: victoriametrics
     restart: unless-stopped
     networks:
       - monitoring
+      - proxy
     volumes:
       - ./storage/victoriametrics:/victoria-metrics-data
     command:
@@ -23,6 +26,7 @@ services:
     restart: unless-stopped
     networks:
       - monitoring
+      - proxy
     volumes:
       - ./storage/victorialogs:/victoria-logs-data
     command:
@@ -35,6 +39,7 @@ services:
     restart: unless-stopped
     networks:
       - monitoring
+      - proxy
     volumes:
       - ./vmagent.yml:/etc/vmagent/vmagent.yml:ro
     command:
@@ -49,6 +54,7 @@ services:
     restart: unless-stopped
     networks:
       - monitoring
+      - proxy
     user: root
     privileged: true
     volumes:
@@ -61,12 +67,28 @@ services:
       - '--path.rootfs=/rootfs'   
       - '--collector.rapl' 
 
+  snmp-exporter:
+    image: prom/snmp-exporter:latest
+    container_name: snmp-exporter
+    restart: unless-stopped
+    networks:
+      - monitoring
+      - proxy
+    ports:
+      - "127.0.0.1:9116:9116"
+    volumes:
+      - ./snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+    command:
+      - "--config.file=/etc/snmp_exporter/snmp.yml"
+      
+  # --- Grafana Dash ---
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
     networks:
       - monitoring
+      - proxy
     environment:
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL}
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
@@ -77,47 +99,117 @@ services:
     depends_on:
       - victoriametrics
 
-  nginx:
-    image: nginx:latest
-    container_name: nginx
-    restart: unless-stopped
-    ports:
-      - "${NGINX_PORT}:80"
-    networks:
-      - monitoring
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - victoriametrics
-      - victorialogs
-      - grafana
-
-  snmp-exporter:
-    image: prom/snmp-exporter:latest
-    container_name: snmp-exporter
+  # --- LibreNMS Database ---
+  librenms-db:
+    image: mariadb:10.11
+    container_name: librenms-db
     restart: unless-stopped
     networks:
       - monitoring
-    ports:
-      - "127.0.0.1:9116:9116"
+      - proxy
     volumes:
-      - ./snmp.yml:/etc/snmp_exporter/snmp.yml:ro
+      - ./storage/librenms-db:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: librenms
+      MYSQL_USER: librenms
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     command:
-      - "--config.file=/etc/snmp_exporter/snmp.yml"
+      - "mysqld"
+      - "--innodb-file-per-table=1"
+      - "--lower-case-table-names=0"
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  coredns:
-    image: coredns/coredns:latest
-    container_name: coredns
-    command: ["-conf", "/etc/coredns/Corefile"]
+  # --- LibreNMS Cache (Redis) ---
+  librenms-redis:
+    image: redis:7-alpine
+    container_name: librenms-redis
+    restart: unless-stopped
     networks:
       - monitoring
+      - proxy
     volumes:
-      - ./coredns/conf:/etc/coredns
-    ports:
-      - "53:53/udp"
-      - "53:53/tcp"
+      - ./storage/librenms-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --- LibreNMS Main Application ---
+  librenms:
+    image: librenms/librenms:latest
+    container_name: librenms
     restart: unless-stopped
+    networks:
+      - monitoring
+      - proxy
+    depends_on:
+      librenms-db:
+        condition: service_healthy
+      librenms-redis:
+        condition: service_healthy
+    environment:
+      - DB_HOST=librenms-db
+      - DB_NAME=librenms
+      - DB_USER=librenms
+      - DB_PASSWORD=${MYSQL_PASSWORD}
+      - DB_TIMEOUT=60
+      - REDIS_HOST=librenms-redis
+      - REDIS_PORT=6379
+      - BASE_URL=${BASE_URL}
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - CACHE_DRIVER=redis
+      - SESSION_DRIVER=redis
+    volumes:
+      - librenms-data:/data
+      - librenms-rrd:/opt/librenms/rrd
+
+  # --- LibreNMS Dispatcher (Polling Worker) ---
+  librenms-dispatcher:
+    image: librenms/librenms:latest
+    container_name: librenms_dispatcher
+    hostname: librenms-dispatcher
+    restart: unless-stopped
+    networks:
+      - monitoring
+      - proxy
+    depends_on:
+      - librenms
+      - librenms-redis
+    environment:
+      - DB_HOST=librenms-db
+      - DB_NAME=librenms
+      - DB_USER=librenms
+      - DB_PASSWORD=${MYSQL_PASSWORD}
+      - DB_TIMEOUT=60
+      - REDIS_HOST=librenms-redis
+      - REDIS_PORT=6379
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - CACHE_DRIVER=redis
+      - SESSION_DRIVER=redis
+      - DISPATCHER_NODE_ID=${DISPATCHER_NODE_ID}
+      - SIDECAR_DISPATCHER=1
+    volumes:
+      - librenms-data:/data
+
+volumes:
+  librenms-data:
+  librenms-rrd:
+  librenms-logs:
 
 networks:
   monitoring:
     driver: bridge
+  proxy:
+    external: true
