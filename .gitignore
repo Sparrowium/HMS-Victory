@@ -5,9 +5,8 @@
 
 # Storage volumes
 /storage/
+/test-logs/
 
-# CoreDNS runtime
-/coredns/conf/
 
 # OS junk
 .DS_Store

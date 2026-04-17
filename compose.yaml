@@ -1,6 +1,7 @@
 services:
-
-  # --- Victoria and its exporter ---
+  # --------------------------------------------------------------------------
+  # VictoriaMetrics – time‑series database
+  # --------------------------------------------------------------------------
   victoriametrics:
     image: victoriametrics/victoria-metrics:latest
     container_name: victoriametrics
@@ -20,6 +21,9 @@ services:
       timeout: 5s
       retries: 5
 
+  # --------------------------------------------------------------------------
+  # VictoriaLogs – log storage
+  # --------------------------------------------------------------------------
   victorialogs:
     image: victoriametrics/victoria-logs:latest
     container_name: victorialogs
@@ -33,6 +37,9 @@ services:
       - '-storageDataPath=/victoria-logs-data'
       - '-httpListenAddr=${VLOG_HTTP_LISTEN_ADDR}'
 
+  # --------------------------------------------------------------------------
+  # vmagent – metrics scraper & forwarder
+  # --------------------------------------------------------------------------
   vmagent:
     image: victoriametrics/vmagent:latest
     container_name: vmagent
@@ -48,6 +55,29 @@ services:
     depends_on:
       - victoriametrics
 
+
+  # --------------------------------------------------------------------------
+  # Vector – log collector (ships to VictoriaLogs)
+  # --------------------------------------------------------------------------
+  vector:
+    image: timberio/vector:nightly-debian
+    container_name: vector
+    restart: unless-stopped
+    user: root                              # required for reading host logs & docker socket
+    networks:
+      - monitoring
+      - proxy
+    volumes:
+      - ./vector.yml:/etc/vector/vector.yml:ro
+      - /var/log:/var/log:ro
+      - ./test-logs:/test-logs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["--config", "/etc/vector/vector.yml"]
+
+  # --------------------------------------------------------------------------
+  # Node Exporter – host metrics
+  # --------------------------------------------------------------------------
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
@@ -58,15 +88,18 @@ services:
     user: root
     privileged: true
     volumes:
-      - /proc:/host/proc:ro 
-      - /sys:/host/sys:ro 
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
       - /:/rootfs:ro
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'   
-      - '--collector.rapl' 
+      - '--path.rootfs=/rootfs'
+      - '--collector.rapl'
 
+  # --------------------------------------------------------------------------
+  # SNMP Exporter – network device metrics
+  # --------------------------------------------------------------------------
   snmp-exporter:
     image: prom/snmp-exporter:latest
     container_name: snmp-exporter
@@ -74,14 +107,16 @@ services:
     networks:
       - monitoring
       - proxy
-    ports:
-      - "127.0.0.1:9116:9116"
+    # Port binding removed – service communicates internally over Docker networks.
+    # If external SNMP polling is required, add back "127.0.0.1:9116:9116"
     volumes:
       - ./snmp.yml:/etc/snmp_exporter/snmp.yml:ro
     command:
       - "--config.file=/etc/snmp_exporter/snmp.yml"
-      
-  # --- Grafana Dash ---
+
+  # --------------------------------------------------------------------------
+  # Grafana – dashboards
+  # --------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -97,9 +132,11 @@ services:
     volumes:
       - ./storage/grafana-data:/var/lib/grafana
     depends_on:
-      - victoriametrics
+      - victoriametrics	
 
-  # --- LibreNMS Database ---
+  # --------------------------------------------------------------------------
+  # LibreNMS – database (MariaDB)
+  # --------------------------------------------------------------------------
   librenms-db:
     image: mariadb:10.11
     container_name: librenms-db
@@ -121,12 +158,14 @@ services:
       - "--character-set-server=utf8mb4"
       - "--collation-server=utf8mb4_unicode_ci"
     healthcheck:
-      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # --- LibreNMS Cache (Redis) ---
+  # --------------------------------------------------------------------------
+  # LibreNMS – cache (Redis)
+  # --------------------------------------------------------------------------
   librenms-redis:
     image: redis:7-alpine
     container_name: librenms-redis
@@ -142,7 +181,9 @@ services:
       timeout: 5s
       retries: 3
 
-  # --- LibreNMS Main Application ---
+  # --------------------------------------------------------------------------
+  # LibreNMS – main application
+  # --------------------------------------------------------------------------
   librenms:
     image: librenms/librenms:latest
     container_name: librenms
@@ -173,18 +214,22 @@ services:
       - librenms-data:/data
       - librenms-rrd:/opt/librenms/rrd
 
-  # --- LibreNMS Dispatcher (Polling Worker) ---
+  # --------------------------------------------------------------------------
+  # LibreNMS – dispatcher (polling worker)
+  # --------------------------------------------------------------------------
   librenms-dispatcher:
     image: librenms/librenms:latest
-    container_name: librenms_dispatcher
+    container_name: librenms-dispatcher
     hostname: librenms-dispatcher
     restart: unless-stopped
     networks:
       - monitoring
       - proxy
     depends_on:
-      - librenms
-      - librenms-redis
+      librenms:
+        condition: service_started
+      librenms-redis:
+        condition: service_healthy
     environment:
       - DB_HOST=librenms-db
       - DB_NAME=librenms
@@ -203,13 +248,19 @@ services:
     volumes:
       - librenms-data:/data
 
+# ----------------------------------------------------------------------------
+# Volumes
+# ----------------------------------------------------------------------------
 volumes:
   librenms-data:
   librenms-rrd:
   librenms-logs:
 
+# ----------------------------------------------------------------------------
+# Networks
+# ----------------------------------------------------------------------------
 networks:
   monitoring:
     driver: bridge
   proxy:
-    external: true
+    external: true 
