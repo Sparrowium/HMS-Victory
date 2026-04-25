@@ -14,24 +14,4 @@ scrape_configs:
     static_configs:
       - targets: ['node-exporter:9100']
 
-  # Scrape metrics from Docker containers (if you use cAdvisor or similar)
-  # - job_name: 'docker'
-  #   static_configs:
-  #     - targets: ['cadvisor:8080']
 
-  # Scrape network devices via SNMP Exporter
-#  - job_name: 'snmp'
-#    metrics_path: /snmp
-#    params:
-#      module: ['if_mib']
-#    static_configs:
-#      - targets:
-#        - '192.168.1.1' # Replace with your actual device IPs
-#        - '192.168.1.2'
-#    relabel_configs:
-#      - source_labels: [__address__]
-#        target_label: __param_target
-#      - source_labels: [__param_target]
-#        target_label: instance
-#      - target_label: __address__
-#        replacement: 'snmp-exporter:9116'

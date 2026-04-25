@@ -95,24 +95,7 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
-      - '--collector.rapl'
-
-  # --------------------------------------------------------------------------
-  # SNMP Exporter – network device metrics
-  # --------------------------------------------------------------------------
-  snmp-exporter:
-    image: prom/snmp-exporter:latest
-    container_name: snmp-exporter
-    restart: unless-stopped
-    networks:
-      - monitoring
-      - proxy
-    # Port binding removed – service communicates internally over Docker networks.
-    # If external SNMP polling is required, add back "127.0.0.1:9116:9116"
-    volumes:
-      - ./snmp.yml:/etc/snmp_exporter/snmp.yml:ro
-    command:
-      - "--config.file=/etc/snmp_exporter/snmp.yml"
+      - '--collector.rapl'	
 
   # --------------------------------------------------------------------------
   # Grafana – dashboards
@@ -191,6 +174,8 @@ services:
     networks:
       - monitoring
       - proxy
+    ports:
+      - "8000:8000"
     depends_on:
       librenms-db:
         condition: service_healthy
