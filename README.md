@@ -4,6 +4,7 @@ Network Automation and Monitoring System
 A lightweight, fully containerized monitoring and log‑aggregation platform built around VictoriaMetrics and LibreNMS. Metrics and logs are collected, stored, and visualised in a single Grafana interface, while LibreNMS handles traditional SNMP‑based device polling and alerting. All services are orchestrated via Docker Compose and configured through environment variables—ideal for homelabs, edge deployments, or any CLI‑friendly environment.
 
 A separate reverse proxy (connected via the proxy external network) exposes the Grafana, VictoriaMetrics, and LibreNMS web UIs under a unified domain.
+
 ---
 
 ## Components
