@@ -17,7 +17,7 @@ A separate reverse proxy (connected via the proxy external network) exposes the 
 | **Node Exporter**     | Host hardware and OS metrics (CPU, memory, disk, network, RAPL power). |
 | **Grafana**           | Dashboarding and visualization for metrics and logs.                   |
 | **LibreNMS**          |	Network discovery, SNMP polling, and alerting engine for outage detection.
-| **LibreNMS Dispatcher**	Distributed polling worker that executes SNMP checks on your network devices.
+| **LibreNMS Dispatcher**|	Distributed polling worker that executes SNMP checks on your network devices.
 | **MariaDB**           |	Database backend for LibreNMS (stores device inventory, event logs, etc.).
 | **Redis**             |	Caching and session store for LibreNMS (improves UI responsiveness).
 
