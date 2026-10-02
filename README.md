@@ -1,4 +1,4 @@
-Network Automation and Monitoring System
+Network Monitoring System
 
 A fully containerised, open‑source monitoring and logging stack built around VictoriaMetrics and LibreNMS. It collects host metrics, aggregates logs, and automatically discovers network devices for fault alerting—all visualised through Grafana and served behind a lightweight reverse proxy.
 
